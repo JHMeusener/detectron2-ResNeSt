@@ -123,6 +123,11 @@ class FrozenBatchNorm2d(nn.Module):
                     res.add_module(name, new_child)
         return res
 
+class NoNorm(nn.Module):
+   def __init__(self,*args, **kwargs):
+        super().__init__()
+   def forward(self,x):
+      return x
 
 def get_norm(norm, out_channels):
     """
@@ -143,6 +148,7 @@ def get_norm(norm, out_channels):
             "FrozenBN": FrozenBatchNorm2d,
             "GN": lambda channels: nn.GroupNorm(32, channels),
             "nnSyncBN": nn.SyncBatchNorm,  # keep for debugging
+            "noNorm":NoNorm,
         }[norm]
     return norm(out_channels)
 

@@ -475,7 +475,7 @@ class BasicStem(nn.Module):
         self.deep_stem = deep_stem
 
         if self.deep_stem:
-            self.conv1_1 = Conv2d(3, stem_width, kernel_size=3, stride=2, 
+            self.conv1_1 = Conv2d(in_channels, stem_width, kernel_size=3, stride=2, 
                                   padding=1, bias=False,
                                   norm=get_norm(norm, stem_width),
                                  ) 

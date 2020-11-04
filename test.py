@@ -87,8 +87,7 @@ class RGBDTrainer(DefaultTrainer):
                 self.optimizer.param_groups[len(nameSet)-1]["lr"] = cfg.MODEL.EDGE_SEGMENT_BASE_LR
                 self.optimizer.param_groups[len(nameSet)-1]["initial_lr"] = cfg.MODEL.EDGE_SEGMENT_BASE_LR
                 self.scheduler.base_lrs[len(nameSet)-1] = cfg.MODEL.EDGE_SEGMENT_BASE_LR
-        
-
+    
     def run_step(self):
         """
         Implement the standard training logic described above.
@@ -318,11 +317,11 @@ class EdgeImportanceLoss(_Loss):
         self.importanceWeight = importanceWeight
 
     def forward(self, x, target, importance):
-        hasToBe0 = (target <=0.)
+        hasToBeNeg = (target <=0.)
         importance = (self.importanceWeight * importance + (1-self.importanceWeight))[:,None,:,:]
-        hasToBe0Error = ((abs(x-target))*hasToBe0*importance).sum()/((hasToBe0*importance).sum()+0.000001)
-        hasToBe1Error = ((abs(x-target))*(~hasToBe0)*importance).sum()/(((~hasToBe0)*importance).sum()+0.000001)
-        return {"hasToBe0Error":hasToBe0Error, "hasToBe1Error":hasToBe1Error}
+        hasToBeNegativeError = ((abs(x-target))*hasToBeNeg*importance).sum()/((hasToBeNeg*importance).sum()+0.000001)
+        hasToBePositiveError = ((abs(x-target))*(~hasToBeNeg)*importance).sum()/(((~hasToBeNeg)*importance).sum()+0.000001)
+        return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError}
 
 @META_ARCH_REGISTRY.register()
 class DepthJointRCNN(DepthRCNN):
@@ -346,10 +345,10 @@ class DepthJointRCNN(DepthRCNN):
             nn.BatchNorm2d(32+32+32+16+8),
             nn.Conv2d(32+32+32+16+8, 32, 1, padding=0, bias=True),
             nn.ReLU(True),
-            nn.Conv2d(32, 8, 3, padding=1, bias=True),
+            nn.Conv2d(32, 16, 3, padding=1, bias=True),
             nn.ReLU(True),
-            nn.Conv2d(8, 2, 1, padding=0, bias=True),
-            nn.Sigmoid())
+            nn.Conv2d(16, 2, 1, padding=0, bias=True),
+            nn.Tanh())
         self.edgeSegmentation_c4Head = nn.Sequential(
             nn.Conv2d(256, 32, 1, padding=0, bias=True),
             nn.ReLU(True),
@@ -446,15 +445,15 @@ cfg.merge_from_file("/files/Code/detectronResNest/configs/COCO-InstanceSegmentat
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
-cfg.DATALOADER.NUM_WORKERS = 10
-cfg.SOLVER.IMS_PER_BATCH = 1
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
+cfg.DATALOADER.NUM_WORKERS = 8
+cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (ballon). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
 cfg.MODEL.BACKBONE.FREEZE_AT = 0
 cfg.MODEL.SEM_SEG_HEAD.NUM_CLASSES = 1
 cfg.MODEL.RETINANET.NUM_CLASSES = 1
-cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
+#cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
 cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
 cfg.TEST.VAL_PERIOD = 25000
 folder = "2020_11_03"
@@ -466,7 +465,7 @@ cfg.SOLVER.CHECKPOINT_PERIOD = 25000
 cfg.SOLVER.BASE_LR = 0.00001
 cfg.SOLVER.STEPS = (60000,80000)
 cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.001
+cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
 
 trainer = RGBDTrainer(cfg) 
 trainer.resume_or_load(resume=False)

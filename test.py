@@ -317,11 +317,14 @@ class EdgeImportanceLoss(_Loss):
         self.importanceWeight = importanceWeight
 
     def forward(self, x, target, importance):
-        hasToBeNeg = (target <=0.)
+        hasToBeNeg = (target < -0.2)
+        hasToBePos = (target > 0.2)
+        hasToBeZeroish = ~(hasToBeNeg | hasToBePos)
         importance = (self.importanceWeight * importance + (1-self.importanceWeight))[:,None,:,:]
         hasToBeNegativeError = ((abs(x-target))*hasToBeNeg*importance).sum()/((hasToBeNeg*importance).sum()+0.000001)
-        hasToBePositiveError = ((abs(x-target))*(~hasToBeNeg)*importance).sum()/(((~hasToBeNeg)*importance).sum()+0.000001)
-        return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError}
+        hasToBePositiveError = ((abs(x-target))*(hasToBePos)*importance).sum()/(((hasToBePos)*importance).sum()+0.000001)
+        hasToBeZeroishError = ((abs(x-target))*(hasToBeZeroish)*importance).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
+        return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError}
 
 @META_ARCH_REGISTRY.register()
 class DepthJointRCNN(DepthRCNN):
@@ -434,8 +437,9 @@ class DepthJointRCNN(DepthRCNN):
         
         loss1 = sum(losses.values())
         loss2 = sum(edgeSegmentLoss.values())
-        losses["hasToBe0Error"] = edgeSegmentLoss["hasToBe0Error"]
-        losses["hasToBe1Error"] = edgeSegmentLoss["hasToBe1Error"]
+        losses["hasToBeZeroishError"] = edgeSegmentLoss["hasToBeZeroishError"]
+        losses["hasToBeNegativeError"] = edgeSegmentLoss["hasToBeNegativeError"]
+        losses["hasToBePositiveError"] = edgeSegmentLoss["hasToBePositiveError"]
         loss = self.multiLoss(loss1,loss2)
         losses["allLoss"] = loss
         return losses
@@ -462,10 +466,10 @@ cfg.SEED = 42
 #cfg.INPUT.CROP.ENABLED = False
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.00001
-cfg.SOLVER.STEPS = (60000,80000)
+cfg.SOLVER.BASE_LR = 0.00005
+cfg.SOLVER.STEPS = (50000,70000)
 cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
+cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.001
 
 trainer = RGBDTrainer(cfg) 
 trainer.resume_or_load(resume=False)

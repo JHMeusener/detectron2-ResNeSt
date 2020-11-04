@@ -321,10 +321,13 @@ class EdgeImportanceLoss(_Loss):
         hasToBePos = (target > 0.2)
         hasToBeZeroish = ~(hasToBeNeg | hasToBePos)
         importance = (self.importanceWeight * importance + (1-self.importanceWeight))[:,None,:,:]
-        hasToBeNegativeError = ((abs(x-target))*hasToBeNeg*importance).sum()/((hasToBeNeg*importance).sum()+0.000001)
-        hasToBePositiveError = ((abs(x-target))*(hasToBePos)*importance).sum()/(((hasToBePos)*importance).sum()+0.000001)
-        hasToBeZeroishError = ((abs(x-target))*(hasToBeZeroish)*importance).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
-        return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError}
+        importanceError = (abs(x-target)*importance)
+        hasToBeNegativeError = (importanceError*hasToBeNeg).sum()/((hasToBeNeg*importance).sum()+0.000001)
+        hasToBePositiveError = (importanceError*(hasToBePos)).sum()/(((hasToBePos)*importance).sum()+0.000001)
+        hasToBeZeroishError = (importanceError*(hasToBeZeroish)).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
+        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*-x/x.detach()).sum()/(((target >= 0.0)*importance).sum() +0.000001)
+        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance*x/x.detach()).sum()/(((target < 0.0)*importance).sum() +0.000001)
+        return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError, "falseNegativeError":falseNegativeError, "falsePositiveError":falsePositiveError}
 
 @META_ARCH_REGISTRY.register()
 class DepthJointRCNN(DepthRCNN):
@@ -351,7 +354,7 @@ class DepthJointRCNN(DepthRCNN):
             nn.Conv2d(32, 16, 3, padding=1, bias=True),
             nn.ReLU(True),
             nn.Conv2d(16, 2, 1, padding=0, bias=True),
-            nn.Tanh())
+            nn.Softsign())
         self.edgeSegmentation_c4Head = nn.Sequential(
             nn.Conv2d(256, 32, 1, padding=0, bias=True),
             nn.ReLU(True),
@@ -440,6 +443,8 @@ class DepthJointRCNN(DepthRCNN):
         losses["hasToBeZeroishError"] = edgeSegmentLoss["hasToBeZeroishError"]
         losses["hasToBeNegativeError"] = edgeSegmentLoss["hasToBeNegativeError"]
         losses["hasToBePositiveError"] = edgeSegmentLoss["hasToBePositiveError"]
+        losses["falseNegativeError"] = edgeSegmentLoss["falseNegativeError"]
+        losses["falsePositiveError"] = edgeSegmentLoss["falsePositiveError"]
         loss = self.multiLoss(loss1,loss2)
         losses["allLoss"] = loss
         return losses

@@ -471,10 +471,10 @@ cfg.SEED = 42
 #cfg.INPUT.CROP.ENABLED = False
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.0005
+cfg.SOLVER.BASE_LR = 0.0002
 cfg.SOLVER.STEPS = (50000,70000)
 cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.01
+cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.003
 
 trainer = RGBDTrainer(cfg) 
 trainer.resume_or_load(resume=False)

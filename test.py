@@ -325,8 +325,8 @@ class EdgeImportanceLoss(_Loss):
         hasToBeNegativeError = (importanceError*hasToBeNeg).sum()/((hasToBeNeg*importance).sum()+0.000001)
         hasToBePositiveError = (importanceError*(hasToBePos)).sum()/(((hasToBePos)*importance).sum()+0.000001)
         hasToBeZeroishError = (importanceError*(hasToBeZeroish)).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
-        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*x/x.detach()).sum()/(((target >= 0.0)*importance).sum() +0.000001)
-        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance*x/x.detach()).sum()/(((target < 0.0)*importance).sum() +0.000001)
+        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*-x/abs(x.detach()+0.000001)).sum()/(((target >= 0.0)*importance).sum() +0.000001)
+        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance*x/abs(x.detach()+0.000001)).sum()/(((target < 0.0)*importance).sum() +0.000001)
         return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError, "falseNegativeError":falseNegativeError, "falsePositiveError":falsePositiveError}
 
 @META_ARCH_REGISTRY.register()

@@ -325,8 +325,8 @@ class EdgeImportanceLoss(_Loss):
         hasToBeNegativeError = (importanceError*hasToBeNeg).sum()/((hasToBeNeg*importance).sum()+0.000001)
         hasToBePositiveError = (importanceError*(hasToBePos)).sum()/(((hasToBePos)*importance).sum()+0.000001)
         hasToBeZeroishError = (importanceError*(hasToBeZeroish)).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
-        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*-x/abs(x.detach()+0.000001)).sum()/(((target >= 0.0)*importance).sum() +0.000001)
-        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance*x/abs(x.detach()+0.000001)).sum()/(((target < 0.0)*importance).sum() +0.000001)
+        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance).sum()/(((target >= 0.0)*importance).sum() +0.000001)
+        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance).sum()/(((target < 0.0)*importance).sum() +0.000001)
         return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError, "falseNegativeError":falseNegativeError, "falsePositiveError":falsePositiveError}
 
 @META_ARCH_REGISTRY.register()
@@ -354,7 +354,7 @@ class DepthJointRCNN(DepthRCNN):
             nn.Conv2d(32, 16, 3, padding=1, bias=True),
             nn.ReLU(True),
             nn.Conv2d(16, 2, 1, padding=0, bias=True),
-            nn.Softsign())
+            nn.Tanh())
         self.edgeSegmentation_c4Head = nn.Sequential(
             nn.Conv2d(256, 32, 1, padding=0, bias=True),
             nn.ReLU(True),
@@ -439,7 +439,7 @@ class DepthJointRCNN(DepthRCNN):
         losses.update(proposal_losses)
         
         loss1 = sum(losses.values())
-        loss2 = sum(edgeSegmentLoss.values())
+        loss2 = sum(edgeSegmentLoss["hasToBeZeroishError"]+edgeSegmentLoss["hasToBeNegativeError"]+edgeSegmentLoss["hasToBePositiveError"])
         losses["hasToBeZeroishError"] = edgeSegmentLoss["hasToBeZeroishError"]
         losses["hasToBeNegativeError"] = edgeSegmentLoss["hasToBeNegativeError"]
         losses["hasToBePositiveError"] = edgeSegmentLoss["hasToBePositiveError"]

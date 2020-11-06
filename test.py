@@ -439,7 +439,7 @@ class DepthJointRCNN(DepthRCNN):
         losses.update(proposal_losses)
         
         loss1 = sum(losses.values())
-        loss2 = sum(edgeSegmentLoss["hasToBeZeroishError"]+edgeSegmentLoss["hasToBeNegativeError"]+edgeSegmentLoss["hasToBePositiveError"])
+        loss2 = edgeSegmentLoss["hasToBeZeroishError"]+edgeSegmentLoss["hasToBeNegativeError"]+edgeSegmentLoss["hasToBePositiveError"]
         losses["hasToBeZeroishError"] = edgeSegmentLoss["hasToBeZeroishError"]
         losses["hasToBeNegativeError"] = edgeSegmentLoss["hasToBeNegativeError"]
         losses["hasToBePositiveError"] = edgeSegmentLoss["hasToBePositiveError"]

@@ -354,7 +354,7 @@ class DepthJointRCNN(DepthRCNN):
             nn.Conv2d(32, 16, 3, padding=1, bias=True),
             nn.ReLU(True),
             nn.Conv2d(16, 2, 1, padding=0, bias=True),
-            nn.Tanh())
+            nn.Softsign())
         self.edgeSegmentation_c4Head = nn.Sequential(
             nn.Conv2d(256, 32, 1, padding=0, bias=True),
             nn.ReLU(True),
@@ -465,16 +465,16 @@ cfg.MODEL.RETINANET.NUM_CLASSES = 1
 #cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
 cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
 cfg.TEST.VAL_PERIOD = 25000
-folder = "2020_11_05"
+folder = "2020_11_07"
 cfg.OUTPUT_DIR = "/files/Code/experiments/" +folder
 cfg.SEED = 42
 #cfg.INPUT.CROP.ENABLED = False
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.0002
+cfg.SOLVER.BASE_LR = 0.0004
 cfg.SOLVER.STEPS = (50000,70000)
 cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.003
+cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.006
 
 trainer = RGBDTrainer(cfg) 
 trainer.resume_or_load(resume=False)

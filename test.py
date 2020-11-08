@@ -325,8 +325,8 @@ class EdgeImportanceLoss(_Loss):
         hasToBeNegativeError = (importanceError*hasToBeNeg).sum()/((hasToBeNeg*importance).sum()+0.000001)
         hasToBePositiveError = (importanceError*(hasToBePos)).sum()/(((hasToBePos)*importance).sum()+0.000001)
         hasToBeZeroishError = (importanceError*(hasToBeZeroish)).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
-        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance).sum()/(((target >= 0.0)*importance).sum() +0.000001)
-        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance).sum()/(((target < 0.0)*importance).sum() +0.000001)
+        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*(-x/(x.detach()+0.000001))).sum()/(((target >= 0.0)*importance).sum() +0.000001)
+        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance*(x/(x.detach()+0.000001))).sum()/(((target < 0.0)*importance).sum() +0.000001)
         return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError, "falseNegativeError":falseNegativeError, "falsePositiveError":falsePositiveError}
 
 @META_ARCH_REGISTRY.register()
@@ -446,7 +446,7 @@ class DepthJointRCNN(DepthRCNN):
         losses["falseNegativeError"] = edgeSegmentLoss["falseNegativeError"]
         losses["falsePositiveError"] = edgeSegmentLoss["falsePositiveError"]
         loss = self.multiLoss(loss1,loss2)
-        losses["allLoss"] = loss
+        losses["allLoss"] = loss + (edgeSegmentLoss["falseNegativeError"] + edgeSegmentLoss["falsePositiveError"])*0.5
         return losses
 
 cfg = get_cfg()
@@ -471,8 +471,8 @@ cfg.SEED = 42
 #cfg.INPUT.CROP.ENABLED = False
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.0004
-cfg.SOLVER.STEPS = (50000,70000)
+cfg.SOLVER.BASE_LR = 0.001
+cfg.SOLVER.STEPS = (70000,85000)
 cfg.TEST.DETECTIONS_PER_IMAGE = 250
 cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.006
 

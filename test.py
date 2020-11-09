@@ -325,7 +325,7 @@ class EdgeImportanceLoss(_Loss):
         hasToBeNegativeError = (importanceError*hasToBeNeg).sum()/((hasToBeNeg*importance).sum()+0.000001)
         hasToBePositiveError = (importanceError*(hasToBePos)).sum()/(((hasToBePos)*importance).sum()+0.000001)
         hasToBeZeroishError = (importanceError*(hasToBeZeroish)).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
-        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*(-x/(x.detach()+0.000001))).sum()/(((target >= 0.0)*importance).sum() +0.000001)
+        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*(x/(x.detach()+0.000001))).sum()/(((target >= 0.0)*importance).sum() +0.000001)
         falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance*(x/(x.detach()+0.000001))).sum()/(((target < 0.0)*importance).sum() +0.000001)
         return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError, "falseNegativeError":falseNegativeError, "falsePositiveError":falsePositiveError}
 
@@ -465,16 +465,16 @@ cfg.MODEL.RETINANET.NUM_CLASSES = 1
 #cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
 cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
 cfg.TEST.VAL_PERIOD = 25000
-folder = "2020_11_07"
+folder = "2020_11_09"
 cfg.OUTPUT_DIR = "/files/Code/experiments/" +folder
 cfg.SEED = 42
 #cfg.INPUT.CROP.ENABLED = False
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.001
+cfg.SOLVER.BASE_LR = 0.004
 cfg.SOLVER.STEPS = (70000,85000)
 cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.006
+cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.01
 
 trainer = RGBDTrainer(cfg) 
 trainer.resume_or_load(resume=False)

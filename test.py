@@ -321,12 +321,12 @@ class EdgeImportanceLoss(_Loss):
         hasToBePos = (target > 0.2)
         hasToBeZeroish = ~(hasToBeNeg | hasToBePos)
         importance = (self.importanceWeight * importance + (1-self.importanceWeight))[:,None,:,:]
-        importanceError = ((x-target)**2*importance)
+        importanceError = (abs(x-target)*importance)
         hasToBeNegativeError = (importanceError*hasToBeNeg).sum()/((hasToBeNeg*importance).sum()+0.000001)
         hasToBePositiveError = (importanceError*(hasToBePos)).sum()/(((hasToBePos)*importance).sum()+0.000001)
         hasToBeZeroishError = (importanceError*(hasToBeZeroish)).sum()/(((hasToBeZeroish)*importance).sum()+0.000001)
-        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance*(x/(x.detach()+0.000001))).sum()/(((target >= 0.0)*importance).sum() +0.000001)
-        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance*(x/(x.detach()+0.000001))).sum()/(((target < 0.0)*importance).sum() +0.000001)
+        falseNegativeError = (((x < 0.0) & (target >= 0.0))*importance)).sum()/(((target >= 0.0)*importance).sum() +0.000001)
+        falsePositiveError = (((x >= 0.0) & (target < 0.0))*importance)).sum()/(((target < 0.0)*importance).sum() +0.000001)
         return {"hasToBeNegativeError":hasToBeNegativeError, "hasToBePositiveError":hasToBePositiveError, "hasToBeZeroishError":hasToBeZeroishError, "falseNegativeError":falseNegativeError, "falsePositiveError":falsePositiveError}
 
 @META_ARCH_REGISTRY.register()
@@ -446,7 +446,7 @@ class DepthJointRCNN(DepthRCNN):
         losses["falseNegativeError"] = edgeSegmentLoss["falseNegativeError"]
         losses["falsePositiveError"] = edgeSegmentLoss["falsePositiveError"]
         loss = self.multiLoss(loss1,loss2)
-        losses["allLoss"] = loss + (edgeSegmentLoss["falseNegativeError"] + edgeSegmentLoss["falsePositiveError"])*0.005
+        losses["allLoss"] = loss
         return losses
 
 cfg = get_cfg()
@@ -465,16 +465,16 @@ cfg.MODEL.RETINANET.NUM_CLASSES = 1
 #cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
 cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
 cfg.TEST.VAL_PERIOD = 25000
-folder = "2020_11_09b"
+folder = "2020_11_11"
 cfg.OUTPUT_DIR = "/files/Code/experiments/" +folder
 cfg.SEED = 42
 #cfg.INPUT.CROP.ENABLED = False
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
 cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.004
-cfg.SOLVER.STEPS = (70000,85000)
+cfg.SOLVER.BASE_LR = 0.008
+cfg.SOLVER.STEPS = (75000,)
 cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.002
+cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
 
 trainer = RGBDTrainer(cfg) 
 trainer.resume_or_load(resume=False)

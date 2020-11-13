@@ -51,8 +51,13 @@ import importlib
 from detectron2.layers import ShapeSpec
 import sys
 import time
-register_coco_instances("my_dataset_train", {}, "/files/Dataset/train.json", "/files/Dataset/datasetPics/")
-register_coco_instances("my_dataset_val", {}, "/files/Dataset/validation.json", "/files/Dataset/datasetPics/")
+
+validationJsonPath = "/files/Dataset/train.json"
+trainingJsonPath = "/files/Dataset/validation.json"
+datasetPath = "/files/Dataset/datasetPics/"
+
+register_coco_instances("my_dataset_train", {},validationJsonPath , datasetPath)
+register_coco_instances("my_dataset_val", {}, trainingJsonPath, datasetPath)
 class RGBDTrainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
@@ -471,13 +476,13 @@ class DepthJointRCNN(DepthRCNN):
 
 
 cfg = get_cfg()
-cfg.merge_from_file("/files/Code/detectronResNest/configs/COCO-InstanceSegmentation/mask_cascade_rcnn_ResNeSt_101_FPN_syncBN_1x.yaml")
+cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegmentation/mask_cascade_rcnn_ResNeSt_101_FPN_syncBN_1x.yaml")
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
+cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
 cfg.DATALOADER.NUM_WORKERS = 8
-cfg.SOLVER.IMS_PER_BATCH = 3
+cfg.SOLVER.IMS_PER_BATCH = 1
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
 cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (ballon). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
 cfg.MODEL.BACKBONE.FREEZE_AT = 0
@@ -499,4 +504,113 @@ cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
 
 trainer = RGBDTrainer(cfg) 
 trainer.resume_or_load(resume=False)
-trainer.train()
+
+from detectron2.evaluation import COCOEvaluator, inference_on_dataset
+from detectron2.data.datasets.coco import convert_to_coco_json
+from detectron2.data import build_detection_test_loader
+from detectron2.evaluation.coco_evaluation import instances_to_coco_json
+from pycocotools import mask as maskUtils
+from pycocotools.coco import COCO
+
+def _toMask(anns, coco):
+            # modify ann['segmentation'] by reference
+            for ann in anns:
+                rle = coco.annToRLE(ann)
+                ann['segmentation'] = rle
+                m = maskUtils.decode(rle)
+                #ious = maskUtils.iou(d,g,iscrowd)
+class JointDepthEvaluator(COCOEvaluator):
+    def _decode_binImage(self,bimg, h, w):
+        if type(bimg) == list:
+            # polygon -- a single object might consist of multiple parts
+            # we merge all parts into one mask rle code
+            if len(bimg) > 0:
+                rles = maskUtils.frPyObjects(bimg, h, w)
+                rle = maskUtils.merge(rles)
+        elif type(bimg['counts']) == list:
+                # uncompressed RLE
+                rle = maskUtils.frPyObjects(bimg, h, w)
+        else:
+            # rle
+            rle = bimg
+        return maskUtils.decode(rle)
+
+    def evaluate(self):
+        if len(self._predictions) == 0:
+            self._logger.warning("[JointDepthEvaluator] Did not receive valid predictions.")
+            return {}
+        self._logger.info("Preparing results ...")
+        coco = COCO(annotation_file=validationJsonPath)
+        results = []
+        for prediction in self._predictions:
+            inputTargets = []
+            maskRCNNPredictions = []
+            edgeSegmentationPredictions = []
+            combinedPredictions = []
+            #get binary mask for each annotation (decode that stuff)
+            #decode maskrcnnInstances
+            for annotation in prediction["instances"]:
+                segmentation = annotation['segmentation']
+                mask = self._decode_binImage(segmentation, prediction["height"], prediction["width"])
+                maskRCNNPredictions.append(torch.tensor(mask)==1)
+            prediction["instances"] = maskRCNNPredictions
+            #decode EdgeInstances
+            for annotation in prediction["edges"]: 
+                mask = self._decode_binImage(annotation, prediction["height"], prediction["width"])
+                edgeSegmentationPredictions.append(torch.tensor(mask)==1)
+            cocoTargetAnnotations = coco.loadAnns(ids=coco.getAnnIds(imgIds=[prediction["image_id"]]))
+            for ann in cocoTargetAnnotations:
+                inputTargets.append(torch.tensor(coco.annToMask(ann)) == 1)
+            # do image wise evaluation:
+
+        return results
+    
+    def process(self, inputs, outputs):
+        """
+        Args:
+            inputs: the inputs to a COCO model (e.g., GeneralizedRCNN).
+                It is a list of dict. Each dict corresponds to an image and
+                contains keys like "height", "width", "file_name", "image_id".
+            outputs: the outputs of a COCO model. It is a list of dicts with key
+                "instances" that contains :class:`Instances`.
+        """
+        # use RLE to encode the masks, because they are too large and takes memory
+        # since this evaluator stores outputs of the entire dataset
+        rles = [maskUtils.encode(np.array(mask[:, :, None], order="F", dtype="uint8"))[0]
+            for mask in outputs["EdgeSegmentation"][0].to(self._cpu_device)]
+        for rle in rles:
+            # "counts" is an array encoded by mask_util as a byte-stream. Python3's
+            # json writer which always produces strings cannot serialize a bytestream
+            # unless you decode it. Thankfully, utf-8 works out (which is also what
+            # the pycocotools/_mask.pyx does).
+            rle["counts"] = rle["counts"].decode("utf-8")
+        
+        save = {"image_id": inputs[0]["image_id"],
+                "file_name": inputs[0]["file_name"],
+                "width": inputs[0]["width"],
+                "height": inputs[0]["height"],
+                "instances":instances_to_coco_json(outputs["MaskRCNN"][0]["instances"].to(self._cpu_device), inputs[0]["image_id"]),
+                "edges":rles}
+        if "target" in inputs[0].keys():
+            rles = [maskUtils.encode(np.array(mask[:, :, None], order="F", dtype="uint8"))[0]
+                    for mask in inputs[0]["target"].to(self._cpu_device)]
+            for rle in rles:
+                # "counts" is an array encoded by mask_util as a byte-stream. Python3's
+                # json writer which always produces strings cannot serialize a bytestream
+                # unless you decode it. Thankfully, utf-8 works out (which is also what
+                # the pycocotools/_mask.pyx does).
+                rle["counts"] = rle["counts"].decode("utf-8")
+            save["target"] = rles
+        if "annotations" in inputs[0].keys():
+            save["cocoTarget"]= inputs[0]["annotations"]
+        self._predictions.append(save)
+
+
+evaluator = JointDepthEvaluator("my_dataset_val", cfg, False, output_dir="./output/")
+val_loader = build_detection_test_loader(cfg, "my_dataset_val", mapper=DepthMapper(cfg,False))
+print(inference_on_dataset(trainer.model, val_loader, evaluator))
+# another equivalent way to evaluate the model is to use `trainer.test`
+
+
+
+#trainer.test(cfg, trainer.model)

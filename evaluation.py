@@ -80,6 +80,9 @@ class RGBDTrainer(DefaultTrainer):
         Overwrite it if you'd like a different data loader.
         """
         return build_detection_test_loader(cfg, dataset_name, mapper=DepthMapper(cfg,False))
+    @classmethod
+    def build_evaluator(cls, cfg, dataset_name):
+        return JointDepthEvaluator(dataset_name, cfg, False, output_dir="./output/")
 
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -213,12 +216,6 @@ class DepthMapper(DatasetMapper):
         # Therefore it's important to use torch.Tensor.
         dataset_dict["image"] = torch.as_tensor(np.ascontiguousarray(image.transpose(2, 0, 1)))
         
-        if not self.is_train:
-            # USER: Modify this if you want to keep them for some reason.
-            dataset_dict.pop("annotations", None)
-            dataset_dict.pop("sem_seg_file_name", None)
-            return dataset_dict
-
         if "annotations" in dataset_dict:
             # USER: Modify this if you want to keep them for some reason.
             for anno in dataset_dict["annotations"]:
@@ -492,7 +489,7 @@ cfg.MODEL.RETINANET.NUM_CLASSES = 1
 cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
 cfg.TEST.VAL_PERIOD = 25000
 folder = "2020_11_11"
-cfg.OUTPUT_DIR = "/files/Code/experiments/" +folder
+cfg.OUTPUT_DIR = "/files/Code/experiments/fromCluster/" +folder
 cfg.SEED = 42
 #cfg.INPUT.CROP.ENABLED = False
 os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
@@ -503,7 +500,7 @@ cfg.TEST.DETECTIONS_PER_IMAGE = 250
 cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
 
 trainer = RGBDTrainer(cfg) 
-trainer.resume_or_load(resume=False)
+trainer.resume_or_load(resume=True)
 
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data.datasets.coco import convert_to_coco_json
@@ -511,6 +508,16 @@ from detectron2.data import build_detection_test_loader
 from detectron2.evaluation.coco_evaluation import instances_to_coco_json
 from pycocotools import mask as maskUtils
 from pycocotools.coco import COCO
+from detectron2.structures import BitMasks, PolygonMasks
+import scipy
+import matplotlib.pyplot as plt
+_imNr = 0
+def debugPrintImg(img):
+    global _imNr
+    path = "/files/test/"
+    plt.imsave("/files/test/"+str(_imNr)+".png", img)
+    _imNr += 1
+
 
 def _toMask(anns, coco):
             # modify ann['segmentation'] by reference
@@ -535,35 +542,156 @@ class JointDepthEvaluator(COCOEvaluator):
             rle = bimg
         return maskUtils.decode(rle)
 
+    def binMasks2outline(self, masks):
+        masksoutline = ((masks&~masks.roll(1,dims=1)) | (~masks&masks.roll(1,dims=1)) | (masks&~masks.roll(1,dims=2)) | (~masks&masks.roll(1,dims=2)) ).sum(dim=0) > 0
+        return masksoutline
+
+    def lines2ObjectSubmasks(self, lines):
+        objects, objectsNr = scipy.ndimage.measurements.label(~lines)
+        objects = torch.tensor(objects,requires_grad=False)
+        submasks = []
+        for i in range(objectsNr):
+            objMask = objects == i
+            if objMask.sum() < 20:
+                continue 
+            else:
+                submasks.append(objMask)
+        try: 
+            return torch.stack(submasks,0)
+        except:
+            return torch.tensor([])
+
     def evaluate(self):
         if len(self._predictions) == 0:
             self._logger.warning("[JointDepthEvaluator] Did not receive valid predictions.")
             return {}
         self._logger.info("Preparing results ...")
         coco = COCO(annotation_file=validationJsonPath)
-        results = []
+        results_ = {"rcnn_alone":{"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[]},
+                    "edgeSegmentation_alone":{"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[]},
+                    "mix":{"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[]}}
+        predNr = 1
         for prediction in self._predictions:
+            if predNr%5 == 0:
+                self._logger.info("Preparing results for prediction {} of {}".format(predNr,len(self._predictions)))
+            predNr += 1
             inputTargets = []
             maskRCNNPredictions = []
             edgeSegmentationPredictions = []
             combinedPredictions = []
+            edgeTarget = []
             #get binary mask for each annotation (decode that stuff)
-            #decode maskrcnnInstances
+            #decode maskrcnnInstances predictions
             for annotation in prediction["instances"]:
                 segmentation = annotation['segmentation']
                 mask = self._decode_binImage(segmentation, prediction["height"], prediction["width"])
                 maskRCNNPredictions.append(torch.tensor(mask)==1)
-            prediction["instances"] = maskRCNNPredictions
             #decode EdgeInstances
             for annotation in prediction["edges"]: 
                 mask = self._decode_binImage(annotation, prediction["height"], prediction["width"])
                 edgeSegmentationPredictions.append(torch.tensor(mask)==1)
-            cocoTargetAnnotations = coco.loadAnns(ids=coco.getAnnIds(imgIds=[prediction["image_id"]]))
-            for ann in cocoTargetAnnotations:
-                inputTargets.append(torch.tensor(coco.annToMask(ann)) == 1)
+            #decode maskrcnnTargets
+            for annotation in prediction["cocoTarget"]:
+                mask = self._decode_binImage(annotation, prediction["height"], prediction["width"])
+                inputTargets.append(torch.tensor(mask)==1)
+            #decode edgeSegmentationTargets
+            if "importance" in prediction.keys():
+                submasks = self._decode_binImage(prediction["importance"], prediction["height"], prediction["width"])
+                edgeTarget = self.lines2ObjectSubmasks(submasks)
             # do image wise evaluation:
+            edgeLinePrediction = edgeSegmentationPredictions[0] | edgeSegmentationPredictions[1]
+            maskRcnnLines = self.binMasks2outline(torch.stack(maskRCNNPredictions,0))
+            mixLines = edgeLinePrediction[:maskRcnnLines.shape[0],:maskRcnnLines.shape[1]] | maskRcnnLines                
+            edgeLinePrediction = self.lines2ObjectSubmasks(edgeLinePrediction[:maskRcnnLines.shape[0],:maskRcnnLines.shape[1]])
+            maskRcnnLinePrediction = self.lines2ObjectSubmasks(maskRcnnLines)
+            mixLinePrediction = self.lines2ObjectSubmasks(mixLines)
+            targets = edgeTarget.cuda() if "importance" in prediction.keys() else torch.stack(inputTargets,0).cuda()
+            keys = ["edgeSegmentation_alone","rcnn_alone","mix"]
+            values = [edgeLinePrediction, maskRcnnLinePrediction, mixLinePrediction]
+            for key in range(len(keys)):
+                results = values[key].cuda()
+                if results.numel() < 1:
+                    re = results_[keys[key]]
+                    re["target_recall"].append(0)
+                    re["target_precision"].append(0)
+                    re["result_recall"].append(0)
+                    re["result_precision"].append(0)
+                    re["target_highResultRecall_recall"].append(0) 
+                    re["target_highResultRecall_precision"].append(0)
+                    results_[keys[key]] = re
+                    continue
+                targetAreas = []
+                targetOverlaps = []
+                targetOverlapPercentages = []
+                resultsArea = results.sum(dim=1).sum(dim=1).cpu()
+                print("calculating TargetOverlaps for Picture")
+                for target in targets:
+                    targetArea = target.sum()
+                    if targetArea < 25:
+                        continue
+                    targetAreas.append(targetArea)
+                    resOvelap = []
+                    for res_i in range(results.shape[0]):
+                        resOvelap.append((target & results[res_i]).sum().cpu())
+                    targetOverlaps.append(torch.stack(resOvelap,0))
+                    targetOverlapPercentages.append(targetOverlaps[-1]/resultsArea.float())
+                print("Precision and Recall Calculations")
+                resultSortIdx = torch.argsort(resultsArea)
+                result_precision = []
+                result_recall = []
+                for res in resultSortIdx:
+                    maxim, idx = torch.stack(targetOverlapPercentages,0)[:,res].max(0)
+                    result_precision.append(maxim)
+                    result_recall.append(targetOverlaps[idx][res]/targetAreas[idx].float())
 
-        return results
+                maximal_error_percantage_for_a_valid_convex = 0.05
+                target_precision = []
+                target_recall = []
+                target_fragmentation = []
+                target_highResultRecall_recall = []
+                target_highResultRecall_precision = []
+
+                high_recall_threshold = 0.1
+
+                for target_nr in range(len(targetAreas)):
+                    relevantResults = targetOverlapPercentages[target_nr] > (1.-maximal_error_percantage_for_a_valid_convex)
+                    if relevantResults.sum() == 0:
+                        target_precision.append(0)
+                        target_recall
+                        continue
+                    overlapSum = targetOverlaps[target_nr][relevantResults].sum().cpu()
+                    resultsSum = resultsArea[relevantResults].sum().cpu()
+                    target_precision.append(overlapSum/resultsSum.float())
+                    target_recall.append(overlapSum/targetAreas[target_nr].float().cpu())
+                    target_fragmentation.append(len(relevantResults))
+                    target_recall_percentage = targetOverlaps[target_nr][relevantResults].cpu() / targetAreas[target_nr].float().cpu()
+                    target_highResultRecall_recall.append(targetOverlaps[target_nr][relevantResults][target_recall_percentage > high_recall_threshold].sum().cpu()/targetAreas[target_nr].cpu().float())
+                    try:
+                        target_highResultRecall_precision.append(targetOverlaps[target_nr][relevantResults][target_recall_percentage > high_recall_threshold].cpu()/torch.tensor(resultsArea)[relevantResults][target_recall_percentage > high_recall_threshold].float().cpu() if torch.tensor(resultsArea)[relevantResults][target_recall_percentage > high_recall_threshold].numel > 0 else 0.)
+                    except:
+                        target_highResultRecall_precision.append(0.)
+                target_precision = torch.tensor(target_precision)
+                target_recall = torch.tensor(target_recall)
+                target_fragmentation = torch.tensor(target_fragmentation)
+                target_highResultRecall_recall = torch.tensor(target_highResultRecall_recall)
+                try: target_highResultRecall_precision = torch.cat([torch.tensor(a) for a in target_highResultRecall_precision],0)
+                except: target_highResultRecall_precision = torch.tensor(0.)
+                re = results_[keys[key]]
+                re["target_recall"].append(target_recall)
+                re["target_precision"].append(target_precision)
+                re["result_recall"].append(result_recall)
+                re["result_precision"].append(result_precision)
+                re["target_highResultRecall_recall"].append(target_highResultRecall_recall) 
+                re["target_highResultRecall_precision"].append(target_highResultRecall_precision)
+                results_[keys[key]] = re
+        for key in range(len(keys)):
+            results_[keys[key]]["target_recall"] = torch.cat(results_[keys[key]]["target_recall"],0).mean()
+            results_[keys[key]]["target_precision"] = torch.cat(results_[keys[key]]["target_precision"],0).mean()
+            results_[keys[key]]["result_recall"] = torch.cat(results_[keys[key]]["result_recall"],0).mean()
+            results_[keys[key]]["result_precision"] = torch.cat(results_[keys[key]]["result_precision"],0).mean()
+            results_[keys[key]]["target_highResultRecall_recall"] = torch.cat(results_[keys[key]]["target_highResultRecall_recall"],0).mean()
+            results_[keys[key]]["target_highResultRecall_precision"] = torch.cat(results_[keys[key]]["target_highResultRecall_precision"],0).mean()
+        return results_
     
     def process(self, inputs, outputs):
         """
@@ -591,18 +719,21 @@ class JointDepthEvaluator(COCOEvaluator):
                 "height": inputs[0]["height"],
                 "instances":instances_to_coco_json(outputs["MaskRCNN"][0]["instances"].to(self._cpu_device), inputs[0]["image_id"]),
                 "edges":rles}
-        if "target" in inputs[0].keys():
+        if "importance" in inputs[0].keys():
+            rles = maskUtils.encode(np.array((inputs[0]["importance"].to(self._cpu_device)[:, :, None]==1.0)*1, order="F", dtype="uint8"))[0]
+            rles["counts"] = rles["counts"].decode("utf-8")
+            save["target"] = rles
+        if "instances" in inputs[0].keys():
+            bmasks = BitMasks.from_polygon_masks(inputs[0]["instances"].to(self._cpu_device).gt_masks,inputs[0]["height"],inputs[0]["width"])
             rles = [maskUtils.encode(np.array(mask[:, :, None], order="F", dtype="uint8"))[0]
-                    for mask in inputs[0]["target"].to(self._cpu_device)]
+                for mask in bmasks]
             for rle in rles:
                 # "counts" is an array encoded by mask_util as a byte-stream. Python3's
                 # json writer which always produces strings cannot serialize a bytestream
                 # unless you decode it. Thankfully, utf-8 works out (which is also what
                 # the pycocotools/_mask.pyx does).
                 rle["counts"] = rle["counts"].decode("utf-8")
-            save["target"] = rles
-        if "annotations" in inputs[0].keys():
-            save["cocoTarget"]= inputs[0]["annotations"]
+            save["cocoTarget"]= rles
         self._predictions.append(save)
 
 

@@ -52,12 +52,7 @@ from detectron2.layers import ShapeSpec
 import sys
 import time
 
-validationJsonPath = "/files/Dataset/train.json"
-trainingJsonPath = "/files/Dataset/validation.json"
-datasetPath = "/files/Dataset/datasetPics/"
 
-register_coco_instances("my_dataset_train", {},validationJsonPath , datasetPath)
-register_coco_instances("my_dataset_val", {}, trainingJsonPath, datasetPath)
 class RGBDTrainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
@@ -472,36 +467,6 @@ class DepthJointRCNN(DepthRCNN):
         return {"MaskRCNN":results,"EdgeSegmentation":edgeSegmentOutput}
 
 
-cfg = get_cfg()
-cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegmentation/mask_cascade_rcnn_ResNeSt_101_FPN_syncBN_1x.yaml")
-cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
-cfg.DATASETS.TRAIN = ("my_dataset_train",)
-cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
-cfg.DATALOADER.NUM_WORKERS = 8
-cfg.SOLVER.IMS_PER_BATCH = 1
-cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
-cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (ballon). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
-cfg.MODEL.BACKBONE.FREEZE_AT = 0
-cfg.MODEL.SEM_SEG_HEAD.NUM_CLASSES = 1
-cfg.MODEL.RETINANET.NUM_CLASSES = 1
-#cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
-cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
-cfg.TEST.VAL_PERIOD = 25000
-folder = "2020_11_11"
-cfg.OUTPUT_DIR = "/files/Code/experiments/fromCluster/" +folder
-cfg.SEED = 42
-#cfg.INPUT.CROP.ENABLED = False
-os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.008
-cfg.SOLVER.STEPS = (75000,)
-cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
-
-trainer = RGBDTrainer(cfg) 
-trainer.resume_or_load(resume=True)
-
 from detectron2.evaluation import COCOEvaluator, inference_on_dataset
 from detectron2.data.datasets.coco import convert_to_coco_json
 from detectron2.data import build_detection_test_loader
@@ -511,6 +476,8 @@ from pycocotools.coco import COCO
 from detectron2.structures import BitMasks, PolygonMasks
 import scipy
 import matplotlib.pyplot as plt
+import collections
+
 _imNr = 0
 def debugPrintImg(img):
     global _imNr
@@ -562,14 +529,18 @@ class JointDepthEvaluator(COCOEvaluator):
             return torch.tensor([])
 
     def evaluate(self):
+        collections.OrderedDict()
+        return collections.OrderedDict({"nr1":collections.OrderedDict({"e1":torch.rand((1,1)).item(),"e2":torch.rand((1,1)).item()}),"nr3":collections.OrderedDict({"lol":55})})
         if len(self._predictions) == 0:
             self._logger.warning("[JointDepthEvaluator] Did not receive valid predictions.")
             return {}
         self._logger.info("Preparing results ...")
+        validationJsonPath = "/files/Dataset/train.json"
         coco = COCO(annotation_file=validationJsonPath)
-        results_ = {"rcnn_alone":{"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[], "target_fragmentation":[]},
-                    "edgeSegmentation_alone":{"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[], "target_fragmentation":[]},
-                    "mix":{"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[], "target_fragmentation":[]}}
+
+        results_ = collections.OrderedDict({"rcnn_alone":collections.OrderedDict({"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[], "target_fragmentation":[]}),
+                    "edgeSegmentation_alone":collections.OrderedDict({"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[], "target_fragmentation":[]}),
+                    "mix":collections.OrderedDict({"target_recall":[],"target_precision":[],"result_precision":[],"result_recall":[],"target_highResultRecall_recall":[],"target_highResultRecall_precision":[], "target_fragmentation":[]})})
         predNr = 1
         for prediction in self._predictions:
             if predNr%5 == 0:
@@ -687,13 +658,13 @@ class JointDepthEvaluator(COCOEvaluator):
                 re["target_fragmentation"].append(target_fragmentation)
                 results_[keys[key]] = re
         for key in range(len(keys)):
-            results_[keys[key]]["target_recall"] = torch.cat(results_[keys[key]]["target_recall"],0).mean()
-            results_[keys[key]]["target_precision"] = torch.cat(results_[keys[key]]["target_precision"],0).mean()
-            results_[keys[key]]["result_recall"] = torch.cat([torch.stack(x,0) for x in results_[keys[key]]["result_recall"]],0).mean()
-            results_[keys[key]]["result_precision"] = torch.cat([torch.stack(x,0) for x in results_[keys[key]]["result_precision"]],0).mean()
-            results_[keys[key]]["target_highResultRecall_recall"] = torch.cat(results_[keys[key]]["target_highResultRecall_recall"],0).mean()
-            results_[keys[key]]["target_highResultRecall_precision"] = torch.cat(results_[keys[key]]["target_highResultRecall_precision"],0).mean()
-            results_[keys[key]]["target_fragmentation"] = torch.cat(results_[keys[key]]["target_fragmentation"],0).float().mean()
+            results_[keys[key]]["target_recall"] = torch.cat(results_[keys[key]]["target_recall"],0).mean().item()
+            results_[keys[key]]["target_precision"] = torch.cat(results_[keys[key]]["target_precision"],0).mean().item()
+            results_[keys[key]]["result_recall"] = torch.cat([torch.stack(x,0) for x in results_[keys[key]]["result_recall"]],0).mean().item()
+            results_[keys[key]]["result_precision"] = torch.cat([torch.stack(x,0) for x in results_[keys[key]]["result_precision"]],0).mean().item()
+            results_[keys[key]]["target_highResultRecall_recall"] = torch.cat(results_[keys[key]]["target_highResultRecall_recall"],0).mean().item()
+            results_[keys[key]]["target_highResultRecall_precision"] = torch.cat(results_[keys[key]]["target_highResultRecall_precision"],0).mean().item()
+            results_[keys[key]]["target_fragmentation"] = torch.cat(results_[keys[key]]["target_fragmentation"],0).float().mean().item()
         return results_
     
     def process(self, inputs, outputs):
@@ -749,10 +720,44 @@ class JointDepthEvaluator(COCOEvaluator):
             save["cocoTarget"]= rles
         self._predictions.append(save)
 
+if __name__ == "__main__":
+    validationJsonPath = "/files/Dataset/train.json"
+    trainingJsonPath = "/files/Dataset/validation.json"
+    datasetPath = "/files/Dataset/datasetPics/"
 
-evaluator = JointDepthEvaluator("my_dataset_val", cfg, False, output_dir="./output/")
-val_loader = build_detection_test_loader(cfg, "my_dataset_val", mapper=DepthMapper(cfg,False))
-print(inference_on_dataset(trainer.model, val_loader, evaluator))
+    register_coco_instances("my_dataset_train", {},validationJsonPath , datasetPath)
+    register_coco_instances("my_dataset_val", {}, trainingJsonPath, datasetPath)
+    cfg = get_cfg()
+    cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegmentation/mask_cascade_rcnn_ResNeSt_101_FPN_syncBN_1x.yaml")
+    cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
+    cfg.DATASETS.TRAIN = ("my_dataset_train",)
+    cfg.DATASETS.TEST =  ("my_dataset_val",)
+    cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
+    cfg.DATALOADER.NUM_WORKERS = 8
+    cfg.SOLVER.IMS_PER_BATCH = 1
+    cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
+    cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (ballon). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
+    cfg.MODEL.BACKBONE.FREEZE_AT = 0
+    cfg.MODEL.SEM_SEG_HEAD.NUM_CLASSES = 1
+    cfg.MODEL.RETINANET.NUM_CLASSES = 1
+    #cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
+    cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
+    cfg.TEST.VAL_PERIOD = 25000
+    folder = "2020_11_11"
+    cfg.OUTPUT_DIR = "/files/Code/experiments/fromCluster/" +folder
+    cfg.SEED = 42
+    #cfg.INPUT.CROP.ENABLED = False
+    os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
+    cfg.SOLVER.CHECKPOINT_PERIOD = 25000
+    cfg.SOLVER.BASE_LR = 0.008
+    cfg.SOLVER.STEPS = (75000,)
+    cfg.TEST.DETECTIONS_PER_IMAGE = 250
+    cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
+    trainer = RGBDTrainer(cfg) 
+    trainer.resume_or_load(resume=True)
+    evaluator = JointDepthEvaluator("my_dataset_val", cfg, False, output_dir="./output/")
+    val_loader = build_detection_test_loader(cfg, "my_dataset_val", mapper=DepthMapper(cfg,False))
+    print(inference_on_dataset(trainer.model, val_loader, evaluator))
 # another equivalent way to evaluate the model is to use `trainer.test`
 
 

@@ -52,7 +52,6 @@ from detectron2.layers import ShapeSpec
 import sys
 import time
 
-
 class RGBDTrainer(DefaultTrainer):
     @classmethod
     def build_train_loader(cls, cfg):
@@ -529,8 +528,8 @@ class JointDepthEvaluator(COCOEvaluator):
             return torch.tensor([])
 
     def evaluate(self):
-        collections.OrderedDict()
-        return collections.OrderedDict({"nr1":collections.OrderedDict({"e1":torch.rand((1,1)).item(),"e2":torch.rand((1,1)).item()}),"nr3":collections.OrderedDict({"lol":55})})
+        #collections.OrderedDict()
+        #return collections.OrderedDict({"nr1":collections.OrderedDict({"e1":torch.rand((1,1)).item(),"e2":torch.rand((1,1)).item()}),"nr3":collections.OrderedDict({"lol":55})})
         if len(self._predictions) == 0:
             self._logger.warning("[JointDepthEvaluator] Did not receive valid predictions.")
             return {}
@@ -665,6 +664,11 @@ class JointDepthEvaluator(COCOEvaluator):
             results_[keys[key]]["target_highResultRecall_recall"] = torch.cat(results_[keys[key]]["target_highResultRecall_recall"],0).mean().item()
             results_[keys[key]]["target_highResultRecall_precision"] = torch.cat(results_[keys[key]]["target_highResultRecall_precision"],0).mean().item()
             results_[keys[key]]["target_fragmentation"] = torch.cat(results_[keys[key]]["target_fragmentation"],0).float().mean().item()
+        #write the eval results into the eventstorage
+        #storage = get_event_storage()
+        #for task, tdic in results_.items():
+        #    for key, value in results_.items():
+        #        storage.put_scalar(task+"_"+key, value, smoothing_hint=True)
         return results_
     
     def process(self, inputs, outputs):

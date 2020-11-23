@@ -217,11 +217,12 @@ class OnlyEdges(DepthJointRCNN):
 
 class OnlyOneMapper(DepthMapper):
     def __call__(self, dataset_dict):
-        super().__call__(self,dataset_dict)
+        dataset_dict = super().__call__(self,dataset_dict)
         if self.deleteRGB:
             dataset_dict["image"] *= 0.
         else:
             dataset_dict["depth"] *= 0.
+        return dataset_dict
 
 class RGBDTrainerDeleteRGB(RGBDTrainer):
     @classmethod

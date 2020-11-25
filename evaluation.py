@@ -53,6 +53,7 @@ import sys
 import time
 
 class RGBDTrainer(DefaultTrainer):
+    trainer = []
     @classmethod
     def build_train_loader(cls, cfg):
         """
@@ -76,10 +77,16 @@ class RGBDTrainer(DefaultTrainer):
         return build_detection_test_loader(cfg, dataset_name, mapper=DepthMapper(cfg,False))
     @classmethod
     def build_evaluator(cls, cfg, dataset_name):
-        return JointDepthEvaluator(dataset_name, cfg, False, output_dir="./output/")
+        evaluator = JointDepthEvaluator(dataset_name, cfg, False, output_dir="./output/")
+        evaluator.trainer = RGBDTrainer.trainer
+        return evaluator
 
     def __init__(self, cfg):
         super().__init__(cfg)
+        if len(RGBDTrainer.trainer) > 0:
+            RGBDTrainer.trainer[0] = self
+        else:
+            RGBDTrainer.trainer.append(self)
         nameSet = set()
         for i, name in enumerate(self.model.named_parameters()):
             if not name[1].requires_grad:
@@ -528,6 +535,9 @@ class JointDepthEvaluator(COCOEvaluator):
             return torch.tensor([])
 
     def evaluate(self):
+        self._logger.info("Shifting Model to cpu")
+        self.trainer[0].model = self.trainer[0].model.to("cpu")
+        torch.cuda.empty_cache()
         #collections.OrderedDict()
         #return collections.OrderedDict({"nr1":collections.OrderedDict({"e1":torch.rand((1,1)).item(),"e2":torch.rand((1,1)).item()}),"nr3":collections.OrderedDict({"lol":55})})
         if len(self._predictions) == 0:
@@ -669,6 +679,10 @@ class JointDepthEvaluator(COCOEvaluator):
         #for task, tdic in results_.items():
         #    for key, value in results_.items():
         #        storage.put_scalar(task+"_"+key, value, smoothing_hint=True)
+        torch.cuda.empty_cache()
+        self._logger.info("Shifting Model to GPU")
+        self.trainer[0].model = self.trainer[0].model.to(torch.device(0))
+        torch.cuda.empty_cache()
         return results_
     
     def process(self, inputs, outputs):
@@ -680,20 +694,21 @@ class JointDepthEvaluator(COCOEvaluator):
             outputs: the outputs of a COCO model. It is a list of dicts with key
                 "instances" that contains :class:`Instances`.
         """
-        #convert output to lines:
-        edgeSep = outputs["EdgeSegmentation"][0] > 0
-        outlineLR =(edgeSep[0]  & ~edgeSep[0].roll(1,dims=0))
-        outlineLRb = (edgeSep[0] & ~edgeSep[0].roll(1,dims=1))
-        outlineLRc = (edgeSep[0] & ~edgeSep[0].roll(-1,dims=1))
-        outlineUD =(edgeSep[1]  & ~edgeSep[1].roll(1,dims=1))
-        outlineUDb = (edgeSep[1] & ~edgeSep[1].roll(-1,dims=0)) 
-        outlineUDc = (edgeSep[1] & ~edgeSep[1].roll(1,dims=0)) 
-        outlineLR = outlineLR|outlineLRb|outlineLRc
-        outlineUD = outlineUD|outlineUDb|outlineUDc
-        edgeSepOutline = (outlineLR | outlineUD)
-        # use RLE to encode the masks, because they are too large and takes memory
-        # since this evaluator stores outputs of the entire dataset
-        rles = [maskUtils.encode(np.array(edgeSepOutline.to(self._cpu_device)[:, :, None], order="F", dtype="uint8"))[0]]
+        with torch.no_grad:
+            #convert output to lines:
+            edgeSep = outputs["EdgeSegmentation"][0] > 0
+            outlineLR =(edgeSep[0]  & ~edgeSep[0].roll(1,dims=0))
+            outlineLRb = (edgeSep[0] & ~edgeSep[0].roll(1,dims=1))
+            outlineLRc = (edgeSep[0] & ~edgeSep[0].roll(-1,dims=1))
+            outlineUD =(edgeSep[1]  & ~edgeSep[1].roll(1,dims=1))
+            outlineUDb = (edgeSep[1] & ~edgeSep[1].roll(-1,dims=0)) 
+            outlineUDc = (edgeSep[1] & ~edgeSep[1].roll(1,dims=0)) 
+            outlineLR = outlineLR|outlineLRb|outlineLRc
+            outlineUD = outlineUD|outlineUDb|outlineUDc
+            edgeSepOutline = (outlineLR | outlineUD)
+            # use RLE to encode the masks, because they are too large and takes memory
+            # since this evaluator stores outputs of the entire dataset
+            rles = [maskUtils.encode(np.array(edgeSepOutline.to(self._cpu_device)[:, :, None], order="F", dtype="uint8"))[0]]
         for rle in rles:
             # "counts" is an array encoded by mask_util as a byte-stream. Python3's
             # json writer which always produces strings cannot serialize a bytestream
@@ -712,6 +727,8 @@ class JointDepthEvaluator(COCOEvaluator):
             rles["counts"] = rles["counts"].decode("utf-8")
             save["target"] = rles
         if "instances" in inputs[0].keys():
+            if len(inputs[0]["instances"]) == 0:
+                return
             bmasks = BitMasks.from_polygon_masks(inputs[0]["instances"].to(self._cpu_device).gt_masks,inputs[0]["height"],inputs[0]["width"])
             rles = [maskUtils.encode(np.array(mask[:, :, None], order="F", dtype="uint8"))[0]
                 for mask in bmasks]

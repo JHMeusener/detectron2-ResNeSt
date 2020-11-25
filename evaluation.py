@@ -694,21 +694,20 @@ class JointDepthEvaluator(COCOEvaluator):
             outputs: the outputs of a COCO model. It is a list of dicts with key
                 "instances" that contains :class:`Instances`.
         """
-        with torch.no_grad:
-            #convert output to lines:
-            edgeSep = outputs["EdgeSegmentation"][0] > 0
-            outlineLR =(edgeSep[0]  & ~edgeSep[0].roll(1,dims=0))
-            outlineLRb = (edgeSep[0] & ~edgeSep[0].roll(1,dims=1))
-            outlineLRc = (edgeSep[0] & ~edgeSep[0].roll(-1,dims=1))
-            outlineUD =(edgeSep[1]  & ~edgeSep[1].roll(1,dims=1))
-            outlineUDb = (edgeSep[1] & ~edgeSep[1].roll(-1,dims=0)) 
-            outlineUDc = (edgeSep[1] & ~edgeSep[1].roll(1,dims=0)) 
-            outlineLR = outlineLR|outlineLRb|outlineLRc
-            outlineUD = outlineUD|outlineUDb|outlineUDc
-            edgeSepOutline = (outlineLR | outlineUD)
-            # use RLE to encode the masks, because they are too large and takes memory
-            # since this evaluator stores outputs of the entire dataset
-            rles = [maskUtils.encode(np.array(edgeSepOutline.to(self._cpu_device)[:, :, None], order="F", dtype="uint8"))[0]]
+        #convert output to lines:
+        edgeSep = outputs["EdgeSegmentation"][0] > 0
+        outlineLR =(edgeSep[0]  & ~edgeSep[0].roll(1,dims=0))
+        outlineLRb = (edgeSep[0] & ~edgeSep[0].roll(1,dims=1))
+        outlineLRc = (edgeSep[0] & ~edgeSep[0].roll(-1,dims=1))
+        outlineUD =(edgeSep[1]  & ~edgeSep[1].roll(1,dims=1))
+        outlineUDb = (edgeSep[1] & ~edgeSep[1].roll(-1,dims=0)) 
+        outlineUDc = (edgeSep[1] & ~edgeSep[1].roll(1,dims=0)) 
+        outlineLR = outlineLR|outlineLRb|outlineLRc
+        outlineUD = outlineUD|outlineUDb|outlineUDc
+        edgeSepOutline = (outlineLR | outlineUD)
+        # use RLE to encode the masks, because they are too large and takes memory
+        # since this evaluator stores outputs of the entire dataset
+        rles = [maskUtils.encode(np.array(edgeSepOutline.to(self._cpu_device)[:, :, None], order="F", dtype="uint8"))[0]]
         for rle in rles:
             # "counts" is an array encoded by mask_util as a byte-stream. Python3's
             # json writer which always produces strings cannot serialize a bytestream

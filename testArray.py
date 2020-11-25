@@ -258,7 +258,7 @@ cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegment
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
 cfg.DATALOADER.NUM_WORKERS = 6
 cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
@@ -282,7 +282,7 @@ cfg.TEST.DETECTIONS_PER_IMAGE = 250
 cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
 
 trainer = RGBDTrainer(cfg) 
-trainer.resume_or_load(resume=False)
+trainer.resume_or_load(resume=True)
 trainer.train()
 
 del trainer
@@ -328,7 +328,7 @@ cfg.merge_from_file("/files/Code/detectronResNest/configs/COCO-InstanceSegmentat
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/faster_cascade_rcnn_ResNeSt_101_FPN_syncbn_range-scale_1x-3627ef78.pth"
 cfg.DATALOADER.NUM_WORKERS = 6
 cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
@@ -363,7 +363,7 @@ cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegment
 cfg.MODEL.META_ARCHITECTURE = "OnlyRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
 cfg.DATALOADER.NUM_WORKERS = 6
 cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
@@ -398,7 +398,7 @@ cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegment
 cfg.MODEL.META_ARCHITECTURE = "OnlyEdges"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
 cfg.DATALOADER.NUM_WORKERS = 6
 cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
@@ -434,7 +434,7 @@ cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegment
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
 cfg.DATALOADER.NUM_WORKERS = 6
 cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
@@ -470,7 +470,7 @@ cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegment
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
 cfg.DATALOADER.NUM_WORKERS = 6
 cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
@@ -507,7 +507,7 @@ cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegment
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)
 cfg.DATASETS.TEST =  ("my_dataset_val",)
-cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
+#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
 cfg.DATALOADER.NUM_WORKERS = 6
 cfg.SOLVER.IMS_PER_BATCH = 3
 cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)

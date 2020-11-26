@@ -556,16 +556,20 @@ class JointDepthEvaluator(COCOEvaluator):
                 self._logger.info("Preparing results for prediction {} of {}".format(predNr,len(self._predictions)))
             predNr += 1
             inputTargets = []
-            maskRCNNPredictions = []
+            maskRCNNPredictions = [torch.zeros((prediction["height"],prediction["width"]))==1]
             edgeSegmentationPredictions = []
             combinedPredictions = []
             edgeTarget = []
             #get binary mask for each annotation (decode that stuff)
             #decode maskrcnnInstances predictions
             for annotation in prediction["instances"]:
+                maskThreshold = 0.6
                 segmentation = annotation['segmentation']
                 mask = self._decode_binImage(segmentation, prediction["height"], prediction["width"])
-                maskRCNNPredictions.append(torch.tensor(mask)==1)
+                if len(prediction["scores"]) > 0:
+                    mask = torch.tensor(mask)
+                    mask = mask[prediction["scores"] > maskThreshold]
+                maskRCNNPredictions.append(mask==1)
             #decode EdgeInstances
             for annotation in prediction["edges"]: 
                 mask = self._decode_binImage(annotation, prediction["height"], prediction["width"])
@@ -714,12 +718,12 @@ class JointDepthEvaluator(COCOEvaluator):
             # unless you decode it. Thankfully, utf-8 works out (which is also what
             # the pycocotools/_mask.pyx does).
             rle["counts"] = rle["counts"].decode("utf-8")
-        
         save = {"image_id": inputs[0]["image_id"],
                 "file_name": inputs[0]["file_name"],
                 "width": inputs[0]["width"],
                 "height": inputs[0]["height"],
                 "instances":instances_to_coco_json(outputs["MaskRCNN"][0]["instances"].to(self._cpu_device), inputs[0]["image_id"]),
+                "scores":outputs["MaskRCNN"][0]["instances"].scores.to(self.cpu_device),
                 "edges":rles}
         if "importance" in inputs[0].keys():
             rles = maskUtils.encode(np.array((inputs[0]["importance"].to(self._cpu_device)[:, :, None]==1.0)*1, order="F", dtype="uint8"))[0]

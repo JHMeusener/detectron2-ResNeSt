@@ -562,14 +562,13 @@ class JointDepthEvaluator(COCOEvaluator):
             edgeTarget = []
             #get binary mask for each annotation (decode that stuff)
             #decode maskrcnnInstances predictions
-            for annotation in prediction["instances"]:
+            for i, annotation in enumerate(prediction["instances"]):
                 maskThreshold = 0.6
                 segmentation = annotation['segmentation']
                 mask = self._decode_binImage(segmentation, prediction["height"], prediction["width"])
-                if len(prediction["scores"]) > 0:
-                    mask = torch.tensor(mask)
-                    mask = mask[prediction["scores"] > maskThreshold]
-                maskRCNNPredictions.append(mask==1)
+                if prediction["scores"][i] < maskThreshold:
+                    continue
+                maskRCNNPredictions.append(torch.tensor(mask)==1)
             #decode EdgeInstances
             for annotation in prediction["edges"]: 
                 mask = self._decode_binImage(annotation, prediction["height"], prediction["width"])
@@ -596,13 +595,13 @@ class JointDepthEvaluator(COCOEvaluator):
                 results = values[key].cuda()
                 if results.numel() < 1:
                     re = results_[keys[key]]
-                    re["target_recall"].append(torch.tensor([0]))
-                    re["target_precision"].append(torch.tensor([0]))
-                    re["result_recall"].append(torch.tensor([0]))
-                    re["result_precision"].append(torch.tensor([0]))
-                    re["target_highResultRecall_recall"].append(torch.tensor([0]))
-                    re["target_highResultRecall_precision"].append(torch.tensor([0]))
-                    re["target_fragmentation"].append(torch.tensor([0]))
+                    re["target_recall"].append(torch.tensor([0.]))
+                    re["target_precision"].append(torch.tensor([0.]))
+                    re["result_recall"].append(torch.tensor([0.]))
+                    re["result_precision"].append(torch.tensor([0.]))
+                    re["target_highResultRecall_recall"].append(torch.tensor([0.]))
+                    re["target_highResultRecall_precision"].append(torch.tensor([0.]))
+                    re["target_fragmentation"].append(torch.tensor([0.]))
                     results_[keys[key]] = re
                     continue
                 targetAreas = []
@@ -643,7 +642,7 @@ class JointDepthEvaluator(COCOEvaluator):
                     if relevantResults.sum() == 0:
                         target_precision.append(torch.tensor([0.]))
                         target_recall.append(torch.tensor([0.]))
-                        target_fragmentation.append(0)
+                        target_fragmentation.append(torch.tensor([0.]))
                         target_highResultRecall_recall.append(torch.tensor([0.]))
                         target_highResultRecall_precision.append(torch.tensor([0.]))
                         continue
@@ -673,8 +672,8 @@ class JointDepthEvaluator(COCOEvaluator):
         for key in range(len(keys)):
             results_[keys[key]]["target_recall"] = torch.cat(results_[keys[key]]["target_recall"],0).mean().item()
             results_[keys[key]]["target_precision"] = torch.cat(results_[keys[key]]["target_precision"],0).mean().item()
-            results_[keys[key]]["result_recall"] = torch.cat([torch.stack(x,0) for x in results_[keys[key]]["result_recall"]],0).mean().item()
-            results_[keys[key]]["result_precision"] = torch.cat([torch.stack(x,0) for x in results_[keys[key]]["result_precision"]],0).mean().item()
+            results_[keys[key]]["result_recall"] = torch.cat([torch.stack(x,0) if len(x) > 1 else x[None,:] for x in results_[keys[key]]["result_recall"]],0).mean().item()
+            results_[keys[key]]["result_precision"] = torch.cat([torch.stack(x,0) if len(x) > 1 else x[None,:] for x in results_[keys[key]]["result_precision"]],0).mean().item()
             results_[keys[key]]["target_highResultRecall_recall"] = torch.cat(results_[keys[key]]["target_highResultRecall_recall"],0).mean().item()
             results_[keys[key]]["target_highResultRecall_precision"] = torch.cat(results_[keys[key]]["target_highResultRecall_precision"],0).mean().item()
             results_[keys[key]]["target_fragmentation"] = torch.cat(results_[keys[key]]["target_fragmentation"],0).float().mean().item()
@@ -723,7 +722,7 @@ class JointDepthEvaluator(COCOEvaluator):
                 "width": inputs[0]["width"],
                 "height": inputs[0]["height"],
                 "instances":instances_to_coco_json(outputs["MaskRCNN"][0]["instances"].to(self._cpu_device), inputs[0]["image_id"]),
-                "scores":outputs["MaskRCNN"][0]["instances"].scores.to(self.cpu_device),
+                "scores":outputs["MaskRCNN"][0]["instances"].scores.to(self._cpu_device),
                 "edges":rles}
         if "importance" in inputs[0].keys():
             rles = maskUtils.encode(np.array((inputs[0]["importance"].to(self._cpu_device)[:, :, None]==1.0)*1, order="F", dtype="uint8"))[0]

@@ -650,7 +650,7 @@ class JointDepthEvaluator(COCOEvaluator):
                     resultsSum = resultsArea[relevantResults].sum().cpu()
                     target_precision.append((overlapSum/resultsSum.float())[None])
                     target_recall.append((overlapSum/targetAreas[target_nr].float().cpu())[None])
-                    target_fragmentation.append(len(relevantResults))
+                    target_fragmentation.append(torch.tensor(len(relevantResults)).float())
                     target_recall_percentage = targetOverlaps[target_nr][relevantResults].cpu() / targetAreas[target_nr].float().cpu()
                     target_highResultRecall_recall.append((targetOverlaps[target_nr][relevantResults][target_recall_percentage > high_recall_threshold].sum().cpu()/targetAreas[target_nr].cpu().float())[None])
                     relevantAreas = resultsArea[relevantResults][target_recall_percentage > high_recall_threshold].float().cpu()

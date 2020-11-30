@@ -141,7 +141,7 @@ class OnlyRCNN(DepthJointRCNN):
         losses["hasToBePositiveError"] = edgeSegmentLoss["hasToBePositiveError"]
         losses["falseNegativeError"] = edgeSegmentLoss["falseNegativeError"]
         losses["falsePositiveError"] = edgeSegmentLoss["falsePositiveError"]
-        loss = self.multiLoss(loss1,torch.tensor([1.]))
+        loss = self.multiLoss(loss1,torch.tensor([1.]).cuda())
         losses["allLoss"] = loss
         return losses
 
@@ -211,7 +211,7 @@ class OnlyEdges(DepthJointRCNN):
         losses["hasToBePositiveError"] = edgeSegmentLoss["hasToBePositiveError"]
         losses["falseNegativeError"] = edgeSegmentLoss["falseNegativeError"]
         losses["falsePositiveError"] = edgeSegmentLoss["falsePositiveError"]
-        loss = self.multiLoss(torch.tensor([1.]),loss2)
+        loss = self.multiLoss(torch.tensor([1.]).cuda(),loss2)
         losses["allLoss"] = loss
         return losses
 

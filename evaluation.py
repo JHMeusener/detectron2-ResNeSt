@@ -672,8 +672,40 @@ class JointDepthEvaluator(COCOEvaluator):
         for key in range(len(keys)):
             results_[keys[key]]["target_recall"] = torch.cat(results_[keys[key]]["target_recall"],0).mean().item()
             results_[keys[key]]["target_precision"] = torch.cat(results_[keys[key]]["target_precision"],0).mean().item()
-            results_[keys[key]]["result_recall"] = torch.cat([torch.stack(x,0) if len(x) > 1 else x[None,:] for x in results_[keys[key]]["result_recall"]],0).mean().item()
-            results_[keys[key]]["result_precision"] = torch.cat([torch.stack(x,0) if len(x) > 1 else x[None,:] for x in results_[keys[key]]["result_precision"]],0).mean().item()
+            temp = []
+            for x in results_[keys[key]]["result_recall"]:
+                if len(x) > 1:
+                    temp.append(torch.stack(x,0))
+                else:
+                    if type(x) == list:
+                        if len(x[0].shape) < 1:
+                            temp.append(x[0][None])
+                        else:
+                            temp.append(x[0])
+                    else:
+                        if len(x.shape) < 1:
+                            temp.append(x[None])
+                        else:
+                            temp.append(x)
+            results_[keys[key]]["result_recall"] = torch.cat(temp,0).mean().item()
+            #results_[keys[key]]["result_recall"] = torch.cat([torch.stack(x,0) if len(x) > 1 else x[None,:] for x in results_[keys[key]]["result_recall"]],0).mean().item()
+            temp = []
+            for x in results_[keys[key]]["result_precision"]:
+                if len(x) > 1:
+                    temp.append(torch.stack(x,0))
+                else:
+                    if type(x) == list:
+                        if len(x[0].shape) < 1:
+                            temp.append(x[0][None])
+                        else:
+                            temp.append(x[0])
+                    else:
+                        if len(x.shape) < 1:
+                            temp.append(x[None])
+                        else:
+                            temp.append(x)
+            results_[keys[key]]["result_precision"] = torch.cat(temp,0).mean().item()
+            #results_[keys[key]]["result_precision"] = torch.cat([torch.stack(x,0) if len(x) > 1 else x[None,:] for x in results_[keys[key]]["result_precision"]],0).mean().item()
             results_[keys[key]]["target_highResultRecall_recall"] = torch.cat(results_[keys[key]]["target_highResultRecall_recall"],0).mean().item()
             results_[keys[key]]["target_highResultRecall_precision"] = torch.cat(results_[keys[key]]["target_highResultRecall_precision"],0).mean().item()
             results_[keys[key]]["target_fragmentation"] = torch.cat(results_[keys[key]]["target_fragmentation"],0).float().mean().item()

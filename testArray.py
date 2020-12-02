@@ -469,43 +469,6 @@ torch.cuda.empty_cache()
 
 ##################################################################################
 cfg = get_cfg()
-cfg.merge_from_file("/files/Code/detectron2-ResNeSt/configs/COCO-InstanceSegmentation/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x.yaml")
-cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
-cfg.DATASETS.TRAIN = ("my_dataset_train",)
-cfg.DATASETS.TEST =  ("my_dataset_val",)
-#cfg.MODEL.WEIGHTS = "/files/Code/detectronResNestWeights/mask_cascade_rcnn_ResNeSt_50_FPN_syncBN_1x-c58bd325.pth"
-cfg.DATALOADER.NUM_WORKERS = 6
-cfg.SOLVER.IMS_PER_BATCH = 3
-cfg.MODEL.ROI_HEADS.BATCH_SIZE_PER_IMAGE = 256   # faster, and good enough for this toy dataset (default: 512)
-cfg.MODEL.ROI_HEADS.NUM_CLASSES = 1  # only has one class (ballon). (see https://detectron2.readthedocs.io/tutorials/datasets.html#update-the-config-for-new-datasets)
-cfg.MODEL.BACKBONE.FREEZE_AT = 0
-cfg.MODEL.SEM_SEG_HEAD.NUM_CLASSES = 1
-cfg.MODEL.RETINANET.NUM_CLASSES = 1
-#cfg.MODEL.RESNETS.NORM = "noNorm"#"BN"
-cfg.MODEL.RESNETS.STEM_OUT_CHANNELS = 128
-cfg.TEST.EVAL_PERIOD = 25000
-cfg.TEST.PRECISE_BN.ENABLED = False
-folder = "2020_11_24_small_joint_onlyDepth"
-cfg.OUTPUT_DIR = "/files/Code/experiments/" +folder
-cfg.SEED = 42
-#cfg.INPUT.CROP.ENABLED = False
-os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
-cfg.SOLVER.CHECKPOINT_PERIOD = 25000
-cfg.SOLVER.BASE_LR = 0.008
-cfg.SOLVER.STEPS = (75000,)
-cfg.TEST.DETECTIONS_PER_IMAGE = 250
-cfg.MODEL.EDGE_SEGMENT_BASE_LR = 0.005
-
-trainer = RGBDTrainerDeleteDepth(cfg) 
-
-trainer.resume_or_load(resume=False)
-trainer.train()
-
-del trainer
-torch.cuda.empty_cache()
-
-##################################################################################
-cfg = get_cfg()
 cfg.merge_from_file("/files/Code/detectronResNest/configs/COCO-InstanceSegmentation/mask_cascade_rcnn_ResNeSt_101_FPN_syncBN_1x.yaml")
 cfg.MODEL.META_ARCHITECTURE = "DepthJointRCNN"
 cfg.DATASETS.TRAIN = ("my_dataset_train",)

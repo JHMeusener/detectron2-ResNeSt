@@ -51,6 +51,11 @@ import importlib
 from detectron2.layers import ShapeSpec
 import sys
 import time
+import scipy
+from models.cobnet_orientation import CobNetOrientationModule
+from models.cobnet_fuse import CobNetFuseModule
+from torch import nn
+from utils.loss import BalancedBCE
 
 class RGBDTrainer(DefaultTrainer):
     trainer = []
@@ -180,16 +185,20 @@ class DepthMapper(DatasetMapper):
         depth_rgb =  utils.read_image(dataset_dict["file_name"].replace(".png","_depth.png"), format=self.img_format)
         occlusion =  utils.read_image(dataset_dict["file_name"].replace(".png","_occlusion_R.png"), format=self.img_format)
         mask =  utils.read_image(dataset_dict["file_name"].replace(".png","_mask_L.png"), format=self.img_format)
-        
+        #or_cntr = scipy.sparse.load_npz(dataset_dict["file_name"].replace(".png",".npz").replace("/datasetPics/","/orientated_contours/") ).toarray()
+        or_cntr = scipy.sparse.load_npz("/files/Dataset/orientated_contours/1062.npz").toarray()[:,:,None].repeat(3,axis=2)
+
         for transform in transforms.transforms:
             # For any extra data that needs to be augmented together, use transform, e.g.:
             depth_rgb = transform.apply_image(depth_rgb)
             occlusion = transform.apply_image(occlusion)
+            or_cntr = transform.apply_image(or_cntr)
             mask = transform.apply_image(mask)
         depth = torch.zeros(depth_rgb.shape[:2])
         depth +=(depth_rgb[:,:,0] / (255. * 255.))
         depth +=(depth_rgb[:,:,1] / 255.)
         depth +=(depth_rgb[:,:,2])
+        #or_cntr = or_cntr[:,:,0]
         patch = torch.zeros(depth.shape)
         for z in range(5):
                 if patch.sum().item()/patch.numel() > 0.25:
@@ -210,6 +219,7 @@ class DepthMapper(DatasetMapper):
         target, importance = mask2target(mask)
         dataset_dict["target"] = target
         dataset_dict["importance"] = importance
+        dataset_dict["or_cntr"] = torch.tensor(or_cntr.copy())
        
         
         # Pytorch's dataloader is efficient on torch.Tensor due to shared-memory,
@@ -330,6 +340,169 @@ class EdgeImportanceLoss(_Loss):
         falseNegativeError = (((x < 0.5) & (target >= 0.5))*importance).sum()/(((target >= 0.5)*importance).sum() +0.000001)
         falsePositiveError = (((x >= 0.5) & (target < 0.5))*importance).sum()/(((target < 0.5)*importance).sum() +0.000001)
         return {"missedPositiveError":missedPositiveError, "missedNegativeError":missedNegativeError,  "falseNegativeError":falseNegativeError, "falsePositiveError":falsePositiveError}
+
+@META_ARCH_REGISTRY.register()
+class DepthJointRCNN_COB(DepthRCNN):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        self.device = torch.device(cfg.MODEL.DEVICE)
+        self.backbone = build_backbone(cfg, input_shape=ShapeSpec(channels=5))      
+        # Import the unguided depth completion network
+        sys.path.append('/files/Code/2020_08_SparseDepthSegmentation/common/unguided_network_pretrained')
+        f = importlib.import_module('unguided_network_cuda')
+        self.d_net = f.CNN().to(self.device)
+        checkpoint_dict = torch.load('/files/Code/2020_08_SparseDepthSegmentation/common/unguided_network_pretrained/CNN_ep0005.pth.tar')
+        self.d_net.load_state_dict(checkpoint_dict['net'])
+        # Disable Training for the unguided module
+        for p in self.d_net.parameters():            
+            p.requires_grad=False
+        
+        #COB Boundary detection
+        nclass = 2
+        #edgeSegmentationheads == reducers
+        self.edgeSegmentation_c4Head = nn.Sequential(
+            nn.Conv2d(256, 1, 1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 3, padding=1, bias=True))
+        self.edgeSegmentation_c3Head = nn.Sequential(
+            nn.Conv2d(256, 32, 1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 3, padding=1, bias=True))
+        self.edgeSegmentation_c2Head = nn.Sequential(
+            nn.Conv2d(256, 32, 1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 3, padding=1, bias=True))
+        self.edgeSegmentation_c1Head = nn.Sequential(
+            nn.Conv2d(256, 32, 1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(32, 16, 1, padding=0, bias=True),
+            nn.ReLU(True))
+        self.edgeSegmentation_x1Head = nn.Sequential(
+            nn.Conv2d(5, 16, 1, padding=0, bias=True),
+            nn.ReLU(True),
+            nn.Conv2d(16, 8, 1, padding=0, bias=True),
+            nn.ReLU(True))
+        self.fuse = CobNetFuseModule()
+
+        self.n_orientations = 4
+        self.orientations = nn.ModuleList(
+            [CobNetOrientationModule(in_channels=[5, 256, 256, 256, 256]) for _ in range(self.n_orientations)])
+            
+        self.criterion = BalancedBCE()
+        self.multiLoss = MultiLoss()
+        self.to(self.device)
+
+    def forward(self, batched_inputs):
+        if not self.training:
+            return self.inference(batched_inputs)
+
+        images = self.preprocess_image(batched_inputs)
+        if "instances" in batched_inputs[0]:
+            gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+        elif "targets" in batched_inputs[0]:
+            log_first_n(
+                logging.WARN, "'targets' in the model inputs is now renamed to 'instances'!", n=10
+            )
+            gt_instances = [x["targets"].to(self.device) for x in batched_inputs]
+        else:
+            gt_instances = None
+
+        features = self.backbone(images.tensor) # ['p2', 'p3', 'p4', 'p5', 'p6']
+        #p2: ([1, 256, 192, 336]
+        #p3: [1, 256, 96, 168]
+        #p4: [1, 256, 48, 84]
+        #p5: [1, 256, 24, 42]
+        #p6: [1, 256, 12, 21]
+        #deeplab v3 with lower layer input 
+        #upsample an concat all
+        c4 = self.edgeSegmentation_c4Head(features["p5"])
+        c3 = self.edgeSegmentation_c3Head(features["p4"])
+        c2 = self.edgeSegmentation_c2Head(features["p3"])
+        c1 = self.edgeSegmentation_c1Head(features["p2"])
+        x1 = self.edgeSegmentation_x1Head(images.tensor)
+        _, _, h1, w1 = x1.size()
+        c1 = F.interpolate(c1, (h1,w1))
+        c2 = F.interpolate(c2, (h1,w1))
+        c3 = F.interpolate(c3, (h1,w1))
+        c4 = F.interpolate(c4, (h1,w1))
+        pre_sides = [images.tensor, features["p2"], features["p3"], features["p4"], features["p5"]]
+        late_sides = [x1,c1,c2,c3,c4]
+        #forward_orientations
+        orientations = []
+        for m in self.orientations:
+            or_ = F.interpolate(m(pre_sides), (h1,w1))
+            orientations.append(or_)
+        y_fine, y_coarse = self.fuse(late_sides)
+
+        target = ImageList.from_tensors([x["target"].to(self.device) for x in batched_inputs],size_divisibility=self.backbone.size_divisibility)
+        importance = ImageList.from_tensors([x["importance"].to(self.device) for x in batched_inputs],size_divisibility=self.backbone.size_divisibility)
+
+        loss = self.criterion(y_fine, target)
+        loss += self.criterion(y_coarse, target)
+
+        loss_orient = 0
+        for j, o_ in enumerate(orientations):
+                    loss_orient += self.criterion(orientations[j],
+                                             (data['or_cntr'] == (j + 1)).float())
+
+        #more rcnn
+        if self.proposal_generator:
+            proposals, proposal_losses = self.proposal_generator(images, features, gt_instances)
+        else:
+            assert "proposals" in batched_inputs[0]
+            proposals = [x["proposals"].to(self.device) for x in batched_inputs]
+            proposal_losses = {}
+
+        _, detector_losses = self.roi_heads(images, features, proposals, gt_instances)
+        if self.vis_period > 0:
+            storage = get_event_storage()
+            if storage.iter % self.vis_period == 0:
+                self.visualize_training(batched_inputs, proposals)
+
+        losses = {}
+        losses.update(detector_losses)
+        losses.update(proposal_losses)
+        
+        loss1 = sum(losses.values())
+        loss2 = loss+loss_orient
+        losses["BoundaryPredictionLoss"] = loss
+        losses["BoundaryOrientationLoss"] = loss_orient
+        loss = self.multiLoss(loss1,loss2)
+        losses["allLoss"] = loss
+        return losses
+
+    def inference(self,batched_inputs):
+        images = self.preprocess_image(batched_inputs)
+        features = self.backbone(images.tensor)
+        proposals, _ = self.proposal_generator(images, features, None)
+        results, _ = self.roi_heads(images, features, proposals, None)
+        results = GeneralizedRCNN._postprocess(results, batched_inputs, images.image_sizes)
+        c4 = self.edgeSegmentation_c4Head(features["p5"])
+        c3 = self.edgeSegmentation_c3Head(features["p4"])
+        c2 = self.edgeSegmentation_c2Head(features["p3"])
+        c1 = self.edgeSegmentation_c1Head(features["p2"])
+        x1 = self.edgeSegmentation_x1Head(images.tensor)
+        _, _, h1, w1 = x1.size()
+        c1 = F.interpolate(c1, (h1,w1))
+        c2 = F.interpolate(c2, (h1,w1))
+        c3 = F.interpolate(c3, (h1,w1))
+        c4 = F.interpolate(c4, (h1,w1))
+        _, _, h1, w1 = x1.size()
+        c1 = F.interpolate(c1, (h1,w1))
+        c2 = F.interpolate(c2, (h1,w1))
+        c3 = F.interpolate(c3, (h1,w1))
+        c4 = F.interpolate(c4, (h1,w1))
+        pre_sides = [images.tensor, features["p2"], features["p3"], features["p4"], features["p5"]]
+        late_sides = [x1,c1,c2,c3,c4]
+        #forward_orientations
+        orientations = []
+        for m in self.orientations:
+            or_ = F.interpolate(m(pre_sides), (h1,w1))
+            orientations.append(or_)
+        y_fine, y_coarse = self.fuse(late_sides)
+        return {"MaskRCNN":results,"EdgeSegmentation":[orientations,[y_fine, y_coarse]]}
+
+
 
 @META_ARCH_REGISTRY.register()
 class DepthJointRCNN(DepthRCNN):
